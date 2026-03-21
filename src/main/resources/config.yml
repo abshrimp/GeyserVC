@@ -1,0 +1,25 @@
+# -----------------------------------------------------
+# GeyserVC Configuration
+# -----------------------------------------------------
+
+ports:
+  udp: 50000
+  websocket: 8080
+  http: 3000
+
+livekit:
+  api_key: "your_livekit_api_key"
+  api_secret: "your_livekit_api_secret"
+  host: "your_livekit_host_url"
+  room_name: "your_room_name"
+
+api:
+  xbl_key: ""
+  base_url: "http://your-domain.com"
+
+voice:
+  max_distance: 40
+
+# The base URL to send to the player via command
+url:
+  base: "https://your-domain.com"

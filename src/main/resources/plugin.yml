@@ -1,0 +1,9 @@
+name: GeyserVC
+version: 1.0
+main: net.ebii.geyservc.GeyserVC
+api-version: '1.21'
+
+commands:
+  vcurl:
+    description: VC用のURLを発行します
+    usage: /vcurl
