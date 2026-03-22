@@ -7,3 +7,7 @@ commands:
   vcurl:
     description: VC用のURLを発行します
     usage: /vcurl
+
+  allmute:
+    description: 全員をミュートします
+    usage: /allmute <true|false>

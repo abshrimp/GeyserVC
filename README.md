@@ -15,6 +15,7 @@ GeyserMC上で動作する近接VCです
 ports:
   udp: 50000        # マイクラサーバーとNodeサーバーをこのポートで通信させます
   websocket: 8080   # Nodeサーバーとクライアントをこのポートで通信させます
+                    #                       （解放し、/wsから飛ばせるようにしておく）
   http: 3000        # 外部からをこのポートに飛ばせるようにしておく
 
 livekit:
@@ -39,3 +40,49 @@ url:
 - `/vcurl`
   - プレイヤー実行時: 自分用 VC URL を表示
   - サーバー実行時: `/vcurl <player_name>` で対象プレイヤーの URL を表示
+
+
+- `/allmute <true|false>`
+  - サーバーのみ使用可能
+  - 全員をMuteする/元の状態に戻す
+
+
+## Nginx 設定例
+
+```                             
+server {
+    listen 443 ssl;
+    server_name your-domain.com;
+
+    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+
+    location /forceMuteAll {
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+        proxy_pass http://localhost:3000;
+    }
+
+    location /restoreMuteState {
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+        proxy_pass http://localhost:3000;
+    }
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+    }
+
+    location /ws {
+        proxy_pass http://localhost:8080/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+    }
+}
+```

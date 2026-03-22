@@ -51147,6 +51147,7 @@ var LIVEKIT_URL = process.env.LIVEKIT_HOST || "";
 var ROOM_NAME = process.env.ROOM_NAME || "room_name";
 var MAX_DISTANCE = Number(process.env.MAX_DISTANCE) || 40;
 var API_BASE_URL = process.env.API_BASE_URL || "http://localhost" + (process.env.HTTP_PORT ? `:${process.env.HTTP_PORT}` : "");
+var WS_URL = `wss://${API_BASE_URL.replace(/^https?:\/\//, "").split(":")[0]}/ws`;
 var app = express();
 app.use(cors());
 app.use(express.json());
@@ -51969,6 +51970,7 @@ const LIVEKIT_URL = "${LIVEKIT_URL}" || "";
 const ROOM_NAME = "${ROOM_NAME}" || "room_name";
 const MAX_DISTANCE = Number("${MAX_DISTANCE}") || 40;
 const API_BASE_URL = "${API_BASE_URL}" || "http://localhost" + (${HTTP_PORT} ? \`:\${${HTTP_PORT}}\` : "");
+const WS_URL = "${WS_URL}";
 
 const getMinecraftProfile = async (uuid) => {
     const response = await fetch(\`\${API_BASE_URL}/minecraftProfile?uuid=\${encodeURIComponent(uuid)}\`);
@@ -52545,17 +52547,28 @@ const getMinecraftProfile = async (uuid) => {
         refreshMicDevices().catch(() => {});
     });
 
-    const socket = new WebSocket("ws://localhost:8080");
+    const socket = new WebSocket(WS_URL);
 
     // Important: treat incoming data as binary
     socket.binaryType = "arraybuffer";
 
     socket.onopen = () => {
-        // console.log("Connected (ws://localhost:8080)");
+        // console.log("Connected ws");
     };
 
     socket.onclose = () => {
-        console.log("Disconnected");
+        // console.log("Disconnected");
+
+        if (room.state === "connected") {
+            console.warn("The WebSocket connection has been lost, so you will be leaving the room.");
+            leaveRoom().catch((error) => {
+                console.error("Auto-leave error on WS close:", error);
+            });
+            
+            setTimeout(() => {
+                alert("The server has shut down");
+            }, 1000);
+        }
     };
 
     socket.onmessage = (event) => {
@@ -53135,16 +53148,7 @@ app.get("/minecraftProfile", async (req, res) => {
     return res.status(500).json({ error: error.message || "Failed to fetch profile" });
   }
 });
-var allowedIps = ["127.0.0.1"];
-function allowOnlyIps(req, res, next) {
-  const clientIp = req.ip || req.connection.remoteAddress;
-  const normalizedIp = clientIp?.replace("::ffff:", "");
-  if (!allowedIps.includes(normalizedIp)) {
-    return res.status(403).json({ error: "Forbidden" });
-  }
-  next();
-}
-app.post("/forceMuteAll", allowOnlyIps, async (req, res) => {
+app.post("/forceMuteAll", async (req, res) => {
   const roomName = resolveRoomName(req);
   if (!roomName) {
     return res.status(400).json({ error: "room is required" });
@@ -53164,7 +53168,7 @@ app.post("/forceMuteAll", allowOnlyIps, async (req, res) => {
     return res.status(500).json({ error: "Failed to mute everyone" });
   }
 });
-app.post("/restoreMuteState", allowOnlyIps, async (req, res) => {
+app.post("/restoreMuteState", async (req, res) => {
   const roomName = resolveRoomName(req);
   if (!roomName) {
     return res.status(400).json({ error: "room is required" });
@@ -53193,7 +53197,6 @@ app.post("/restoreMuteState", allowOnlyIps, async (req, res) => {
 });
 var wss = new WebSocket.Server({ port: WS_PORT });
 wss.on("connection", () => {
-  console.log("WebSocket client connected");
 });
 var udpServer = dgram.createSocket("udp4");
 udpServer.on("error", (err) => {

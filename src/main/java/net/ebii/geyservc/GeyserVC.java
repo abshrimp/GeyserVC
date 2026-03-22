@@ -15,6 +15,8 @@ import java.io.InputStreamReader;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -30,6 +32,8 @@ public class GeyserVC extends JavaPlugin {
     // Loaded from config.yml
     private int udpPort; 
     private String baseUrl;
+    private String roomName;
+    private int httpPort;
     
     // Variable to hold the Node.js process
     private Process nodeProcess;
@@ -41,7 +45,9 @@ public class GeyserVC extends JavaPlugin {
 
         // Load settings from config.yml
         udpPort = getConfig().getInt("ports.udp", 50000);
-        baseUrl = getConfig().getString("url.base", "https://mc.ebii.net");
+        baseUrl = getConfig().getString("url.base", "https://localhost:3000");
+        roomName = getConfig().getString("livekit.room_name", "room_name");
+        httpPort = getConfig().getInt("ports.http", 3000);
 
         // Start the Node.js server
         startNodeServer();
@@ -84,12 +90,10 @@ public class GeyserVC extends JavaPlugin {
 
             // Load all required environment variables from config.yml
             int wsPort = getConfig().getInt("ports.websocket", 8080);
-            int httpPort = getConfig().getInt("ports.http", 3000);
             
             String livekitApiKey = getConfig().getString("livekit.api_key", "");
             String livekitApiSecret = getConfig().getString("livekit.api_secret", "");
             String livekitHost = getConfig().getString("livekit.host", "");
-            String roomName = getConfig().getString("livekit.room_name", "ebii_vc");
             
             String xblApiKey = getConfig().getString("api.xbl_key", "");
             String apiBaseUrl = getConfig().getString("api.base_url", "http://localhost:3000");
@@ -161,7 +165,68 @@ public class GeyserVC extends JavaPlugin {
                 return true;
             }
         }
+
+        else if (command.getName().equalsIgnoreCase("allmute")) {
+            if (sender instanceof Player) {
+                sender.sendMessage("§cThis command can only be executed from the server console.");
+                return true;
+            }
+
+            if (args.length != 1) {
+                sender.sendMessage("Usage: /allmute <true|false>");
+                return true;
+            }
+
+            String action = args[0].toLowerCase();
+            String endpoint = "";
+
+            if (action.equals("true")) {
+                endpoint = "/forceMuteAll?room=" + roomName;
+            } else if (action.equals("false")) {
+                endpoint = "/restoreMuteState?room=" + roomName;
+            } else {
+                sender.sendMessage("Usage: /allmute <true|false>");
+                return true;
+            }
+
+            String requestUrl = "http://localhost:" + httpPort + endpoint;
+            
+            sendHttpRequest(sender, requestUrl);
+            
+            return true;
+        }
+
         return false;
+    }
+
+    private void sendHttpRequest(CommandSender sender, String targetUrl) {
+        Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
+            try {
+                URL url = new URL(targetUrl);
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                
+                connection.setRequestMethod("POST");
+                connection.setConnectTimeout(5000);
+                connection.setReadTimeout(5000);
+                connection.setDoOutput(true);
+
+                int responseCode = connection.getResponseCode();
+
+                if (responseCode >= 200 && responseCode < 300) {
+                    sender.sendMessage("[GeyserVC] Success switching mute state.");
+                } else {
+                    if (responseCode == 409) {
+                        sender.sendMessage("[GeyserVC] Failed: Not muted now.");
+                    } else {
+                        sender.sendMessage("[GeyserVC] Failed: HTTP " + responseCode);
+                    }
+                }
+
+            } catch (Exception e) {
+                sender.sendMessage("[GeyserVC] Error: " + e.getMessage());
+                getLogger().severe("HTTP Request Error: " + e.getMessage());
+            }
+        });
     }
 
     private String generateVcUrl(Player player) {
