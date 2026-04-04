@@ -10,3 +10,5 @@ build
 gradle
 
 src/main/resources/config_env.yml
+
+.claude/
