@@ -52326,6 +52326,7 @@ const getMinecraftProfile = async (uuid) => {
     const isSurvivalOrAdventure = (gameMode) => gameMode === "S" || gameMode === "A";
 
     const canHearRemotePlayer = (localGameMode, remoteGameMode) => {
+        if (!localGameMode || !remoteGameMode) return false;
         if (localGameMode === "C" || localGameMode === "P") return true;
         if (isSurvivalOrAdventure(localGameMode)) {
             return isSurvivalOrAdventure(remoteGameMode);
@@ -52806,7 +52807,7 @@ const getMinecraftProfile = async (uuid) => {
             }
 
             gainNode.gain.value = 3;
-            audibilityGainNode.gain.value = 1;
+            audibilityGainNode.gain.value = 0;
             mediaSourceNode.connect(panNode).connect(gainNode).connect(audibilityGainNode).connect(masterCompressor);
 
             const participantUuidKey = normalizeUuid(decodeMaybeBase64Uuid(participant.identity));
