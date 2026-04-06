@@ -52086,10 +52086,24 @@ const getMinecraftProfile = async (uuid) => {
 
     const room = new Room();
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+    // \u97F3\u5272\u308C\u9632\u6B62\u7528\u306E\u30DE\u30B9\u30BF\u30FC\u30B3\u30F3\u30D7\u30EC\u30C3\u30B5\u30FC
+    const masterCompressor = audioContext.createDynamicsCompressor();
+    masterCompressor.threshold.value = -12;
+    masterCompressor.knee.value = 30;
+    masterCompressor.ratio.value = 12;
+    masterCompressor.attack.value = 0.003;
+    masterCompressor.release.value = 0.25;
+    masterCompressor.connect(audioContext.destination);
+
     const pannerNodes = new Map();
     const remotePannerNodesByIdentity = new Map();
     const wsGameModeByUuid = new Map();
     let wsListedUuidSet = new Set();
+
+    let localPlayerPos = { x: 0, y: 0, z: 0 };
+    const remotePlayerPosByIdentity = new Map();
+
     const listener = audioContext.listener;
     const minecraftProfileCache = new Map();
     const minecraftProfileRequestCache = new Map();
@@ -52327,11 +52341,33 @@ const getMinecraftProfile = async (uuid) => {
 
     const refreshRemoteAudibility = () => {
         const localGameMode = getLocalGameMode();
+        const currentTime = audioContext.currentTime;
 
         pannerNodes.forEach((audioNode) => {
-            const remoteGameMode = wsGameModeByUuid.get(audioNode.participantIdentity);
-            const shouldHear = canHearRemotePlayer(localGameMode, remoteGameMode);
-            audioNode.audibilityGainNode.gain.value = shouldHear ? 1 : 0;
+            const remoteUuid = audioNode.participantIdentity;
+            const remoteGameMode = wsGameModeByUuid.get(remoteUuid);
+
+            let shouldHear = canHearRemotePlayer(localGameMode, remoteGameMode);
+
+            if (shouldHear) {
+                const remotePos = remotePlayerPosByIdentity.get(remoteUuid);
+                if (remotePos) {
+                    const dx = localPlayerPos.x - remotePos.x;
+                    const dy = localPlayerPos.y - remotePos.y;
+                    const dz = localPlayerPos.z - remotePos.z;
+                    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                    // \u8D85\u3048\u305F\u3089\u30DF\u30E5\u30FC\u30C8
+                    if (distance > MAX_DISTANCE) {
+                        shouldHear = false;
+                    }
+                }
+            }
+
+            const targetGain = shouldHear ? 1 : 0;
+            const gainParam = audioNode.audibilityGainNode.gain;
+
+            // \u5883\u754C\u7DDA\u3067\u306E\u30CE\u30A4\u30BA\u3092\u9632\u3050\u305F\u3081\u3001\u6ED1\u3089\u304B\u306B\u30D5\u30A7\u30FC\u30C9
+            gainParam.setTargetAtTime(targetGain, currentTime, 0.05);
         });
     };
 
@@ -52458,7 +52494,8 @@ const getMinecraftProfile = async (uuid) => {
 
         localMicAnalyserNode.fftSize = 1024;
         localMicAnalyserNode.smoothingTimeConstant = 0.7;
-        localMicGainNode.gain.value = Number(micVolumeSlider.value) / 100;
+        // \u30DE\u30A4\u30AF\u97F3\u91CF\u3092\u5185\u90E8\u7684\u306B3\u500D\uFF08300%\uFF09\u306B\u8A2D\u5B9A
+        localMicGainNode.gain.value = (Number(micVolumeSlider.value) / 100) * 3;
         localMicSourceNode.connect(localMicAnalyserNode);
         localMicSourceNode.connect(localMicGainNode).connect(localMicDestinationNode);
         startMicLevelMeter();
@@ -52500,11 +52537,11 @@ const getMinecraftProfile = async (uuid) => {
     micVolumeSlider.oninput = () => {
         updateMicVolumeText();
         if (localMicGainNode) {
-            localMicGainNode.gain.value = Number(micVolumeSlider.value) / 100;
+            localMicGainNode.gain.value = (Number(micVolumeSlider.value) / 100) * 3;
         }
     };
 
-    micMuteButton.onclick = async () => {
+    const toggleMute = async () => {
         isMicMuted = !isMicMuted;
         try {
             await applyMicMuteState();
@@ -52515,6 +52552,13 @@ const getMinecraftProfile = async (uuid) => {
         }
         updateMicMuteButton();
     };
+
+    micMuteButton.onclick = toggleMute;
+    document.addEventListener("keydown", (event) => {
+        if (event.key.toLowerCase() === "m") {
+            toggleMute();
+        }
+    });
 
     micDeviceSelect.onchange = async () => {
         selectedMicDeviceId = micDeviceSelect.value;
@@ -52609,8 +52653,10 @@ const getMinecraftProfile = async (uuid) => {
             const localIdentityUuid = decodeMaybeBase64Uuid(room.localParticipant?.identity || "");
             const isSelf = normalizedUuid === normalizeUuid(localIdentityUuid);
             if (isSelf) {
+            	localPlayerPos = { x, y, z };
                 applyListenerPose(x, y, z, yaw, pitch);
             } else {
+                remotePlayerPosByIdentity.set(normalizedUuid, { x, y, z });
                 const remoteNodes = remotePannerNodesByIdentity.get(normalizedUuid);
                 if (remoteNodes) {
                     remoteNodes.forEach((panNode) => {
@@ -52668,16 +52714,27 @@ const getMinecraftProfile = async (uuid) => {
 
         const wrapper = document.createElement("div");
         wrapper.id = \`volume-control-\${publication.trackSid}\`;
+        wrapper.style.display = "flex";
+        wrapper.style.alignItems = "center";
+        wrapper.style.justifyContent = "space-between";
+        wrapper.style.marginBottom = "8px";
+        wrapper.style.gap = "12px";
 
         const label = document.createElement("label");
         label.htmlFor = \`volume-slider-\${publication.trackSid}\`;
         label.style.display = "inline-flex";
         label.style.alignItems = "center";
         label.style.gap = "8px";
+        label.style.flex = "1";
+        label.style.minWidth = "0";
 
         const avatar = createAvatarImage(profile.skinUrl, profile.name);
+        avatar.style.flexShrink = "0";
         const nameText = document.createElement("span");
         nameText.textContent = \`\${profile.name}\`;
+        nameText.style.whiteSpace = "nowrap";
+        nameText.style.overflow = "hidden";
+        nameText.style.textOverflow = "ellipsis";
         label.appendChild(avatar);
         label.appendChild(nameText);
 
@@ -52688,9 +52745,11 @@ const getMinecraftProfile = async (uuid) => {
         slider.max = "400";
         slider.step = "1";
         slider.value = "100";
+        slider.style.width = "120px";
+        slider.style.flexShrink = "0";
 
         slider.oninput = () => {
-            gainNode.gain.value = Number(slider.value) / 100;
+            gainNode.gain.value = (Number(slider.value) / 100) * 3;
         };
 
         wrapper.appendChild(label);
@@ -52731,7 +52790,7 @@ const getMinecraftProfile = async (uuid) => {
             const audibilityGainNode = audioContext.createGain();
             panNode.panningModel = "equalpower";
             panNode.distanceModel = "inverse";
-            panNode.refDistance = 1;
+            panNode.refDistance = 3;
             panNode.maxDistance = MAX_DISTANCE;
             panNode.rolloffFactor = 1;
             panNode.coneInnerAngle = 360; // inner angle of sound directionality
@@ -52746,9 +52805,9 @@ const getMinecraftProfile = async (uuid) => {
                 panNode.setPosition(0, 0, 1);
             }
 
-            gainNode.gain.value = 1;
+            gainNode.gain.value = 3;
             audibilityGainNode.gain.value = 1;
-            mediaSourceNode.connect(panNode).connect(gainNode).connect(audibilityGainNode).connect(audioContext.destination);
+            mediaSourceNode.connect(panNode).connect(gainNode).connect(audibilityGainNode).connect(masterCompressor);
 
             const participantUuidKey = normalizeUuid(decodeMaybeBase64Uuid(participant.identity));
             const identityNodes = remotePannerNodesByIdentity.get(participantUuidKey) ?? new Set();
@@ -52812,6 +52871,7 @@ const getMinecraftProfile = async (uuid) => {
         });
         pannerNodes.clear();
         remotePannerNodesByIdentity.clear();
+        remotePlayerPosByIdentity.clear();
 
         myId.textContent = "";
         buttonArea.replaceChildren();
