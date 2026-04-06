@@ -2,11 +2,19 @@ package net.ebii.geyservc;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.MapMeta;
+import org.bukkit.map.MapCanvas;
+import org.bukkit.map.MapRenderer;
+import org.bukkit.map.MapView;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -17,6 +25,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -146,7 +155,11 @@ public class GeyserVC extends JavaPlugin {
         if (command.getName().equalsIgnoreCase("vcurl")) {
             if (sender instanceof Player) {
                 Player player = (Player) sender;
-                player.sendMessage("§a[VC-URL] §f" + generateVcUrl(player));
+                String vcUrl = generateVcUrl(player);
+                player.sendMessage("§a[VC-URL] §f" + vcUrl);
+                
+                // QRマップの生成と配布を実行
+                giveQrMap(player, vcUrl);
                 return true;
             } else {
                 if (args.length != 1) {
@@ -160,8 +173,12 @@ public class GeyserVC extends JavaPlugin {
                     return true;
                 }
 
+                String vcUrl = generateVcUrl(target);
                 sender.sendMessage("VC-URL for player [" + target.getName() + "]:");
-                sender.sendMessage(generateVcUrl(target));
+                sender.sendMessage(vcUrl);
+                
+                // コマンド実行者が対象プレイヤーにQRマップを付与する
+                giveQrMap(target, vcUrl);
                 return true;
             }
         }
@@ -197,6 +214,64 @@ public class GeyserVC extends JavaPlugin {
         }
 
         return false;
+    }
+
+    /**
+     * URLをQRコード化して地図アイテムとしてプレイヤーに配布します
+     */
+    private void giveQrMap(Player player, String urlStr) {
+        // メインスレッドをフリーズさせないため、画像ダウンロードは非同期で行う
+        Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
+            try {
+                // 外部APIを使用して128x128(マイクラの地図サイズ)のQRコードを取得
+                String apiUrl = "https://api.qrserver.com/v1/create-qr-code/?size=128x128&margin=1&data=" + URLEncoder.encode(urlStr, "UTF-8");
+                BufferedImage image = ImageIO.read(new URL(apiUrl));
+
+                if (image != null) {
+                    // UI(アイテム付与やマップ作成)の操作はメインスレッドに戻して実行する
+                    Bukkit.getScheduler().runTask(this, () -> {
+                        MapView map = Bukkit.createMap(player.getWorld());
+                        
+                        // デフォルトの描画をクリア
+                        for (MapRenderer renderer : map.getRenderers()) {
+                            map.removeRenderer(renderer);
+                        }
+                        
+                        // 画像を描画するカスタムレンダラーを追加
+                        map.addRenderer(new MapRenderer() {
+                            boolean rendered = false;
+                            @Override
+                            public void render(MapView view, MapCanvas canvas, Player p) {
+                                // 毎チック描画すると重いため、1回だけ描画する
+                                if (!rendered) {
+                                    canvas.drawImage(0, 0, image);
+                                    rendered = true;
+                                }
+                            }
+                        });
+
+                        // 地図アイテムの作成
+                        ItemStack mapItem = new ItemStack(Material.FILLED_MAP);
+                        MapMeta meta = (MapMeta) mapItem.getItemMeta();
+                        if (meta != null) {
+                            meta.setMapView(map);
+                            meta.setDisplayName("§aVoice Chat QR Code");
+                            mapItem.setItemMeta(meta);
+                        }
+
+                        // プレイヤーのインベントリに追加（満杯なら足元にドロップ）
+                        player.getInventory().addItem(mapItem).values().forEach(item -> 
+                            player.getWorld().dropItem(player.getLocation(), item)
+                        );
+                        
+                        player.sendMessage("§a[GeyserVC] §fQRコードの地図をインベントリに追加しました！");
+                    });
+                }
+            } catch (Exception e) {
+                player.sendMessage("§c[GeyserVC] QRコード画像の取得に失敗しました。");
+                getLogger().warning("Failed to fetch QR code: " + e.getMessage());
+            }
+        });
     }
 
     private void sendHttpRequest(CommandSender sender, String targetUrl) {

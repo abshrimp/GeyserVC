@@ -52984,10 +52984,25 @@ var isBedrockUuid = (uuid) => String(uuid || "").startsWith("00000000-0000-0000-
 var getJavaProfile = async (uuid) => {
   const cleanUuid = String(uuid || "").replace(/-/g, "");
   const response = await fetch(`https://sessionserver.mojang.com/session/minecraft/profile/${cleanUuid}`);
+  if (response.status === 204 || response.status === 404) {
+    return {
+      name: "Unknown",
+      skinUrl: `https://minotar.net/avatar/MHF_Question/100.png`,
+      platform: "unknown"
+    };
+  }
   if (!response.ok) {
     throw new Error(`Failed to fetch Java profile: ${response.status}`);
   }
-  const json = await response.json();
+  const text = await response.text();
+  if (!text) {
+    return {
+      name: "Unknown",
+      skinUrl: `https://minotar.net/avatar/MHF_Question/100.png`,
+      platform: "unknown"
+    };
+  }
+  const json = JSON.parse(text);
   return {
     name: json?.name || cleanUuid,
     skinUrl: `https://minotar.net/avatar/${cleanUuid}/100.png`,
