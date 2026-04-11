@@ -52350,18 +52350,31 @@ const getMinecraftProfile = async (uuid) => {
 
             let shouldHear = canHearRemotePlayer(localGameMode, remoteGameMode);
 
+            const isBothSpectator = localGameMode === "P" && remoteGameMode === "P";
+
             if (shouldHear) {
-                const remotePos = remotePlayerPosByIdentity.get(remoteUuid);
-                if (remotePos) {
-                    const dx = localPlayerPos.x - remotePos.x;
-                    const dy = localPlayerPos.y - remotePos.y;
-                    const dz = localPlayerPos.z - remotePos.z;
-                    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                    // \u8D85\u3048\u305F\u3089\u30DF\u30E5\u30FC\u30C8
-                    if (distance > MAX_DISTANCE) {
-                        shouldHear = false;
+                // \u30B9\u30DA\u30AF\u30C6\u30A4\u30BF\u30FC\u540C\u58EB\u300C\u3067\u306F\u306A\u3044\u300D\u5834\u5408\u306E\u307F\u8DDD\u96E2\u306B\u3088\u308B\u30DF\u30E5\u30FC\u30C8\u5224\u5B9A\u3092\u884C\u3046
+                if (!isBothSpectator) {
+                    const remotePos = remotePlayerPosByIdentity.get(remoteUuid);
+                    if (remotePos) {
+                        const dx = localPlayerPos.x - remotePos.x;
+                        const dy = localPlayerPos.y - remotePos.y;
+                        const dz = localPlayerPos.z - remotePos.z;
+                        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+                        // \u8D85\u3048\u305F\u3089\u30DF\u30E5\u30FC\u30C8
+                        if (distance > MAX_DISTANCE) {
+                            shouldHear = false;
+                        }
                     }
                 }
+            }
+
+            // \u30B9\u30DA\u30AF\u30C6\u30A4\u30BF\u30FC\u540C\u58EB\u306A\u3089\u6E1B\u8870\u3092\u306A\u304F\u3057\u3001\u3069\u3053\u306B\u3044\u3066\u3082\u4E00\u5B9A\u306E\u97F3\u91CF\u3067\u805E\u3053\u3048\u308B\u3088\u3046\u306B\u3059\u308B
+            if (isBothSpectator) {
+                audioNode.panNode.rolloffFactor = 0;
+            } else {
+                audioNode.panNode.rolloffFactor = 1;
             }
 
             const targetGain = shouldHear ? 1 : 0;
